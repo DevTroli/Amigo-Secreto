@@ -28,7 +28,7 @@ export async function POST(request) {
     // Em C#: for (int i = 0; i < participantes.length; i++)
     for (const participante of participantes) {
       await sql`
-        INSERT INTO participantes (nome, segredo, tirou)
+        INSERT INTO participantes (nome, segredo, sorteado)
         VALUES (${participante.nome}, ${participante.segredo}, ${participante.sorteado})
       `;
     }
