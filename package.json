@@ -1,0 +1,19 @@
+{
+  "name": "amigo-secreto",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@next/font": "14.2.15",
+    "eslint": "9.39.2",
+    "eslint-config-next": "16.0.10",
+    "next": "16.0.10",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  }
+}
