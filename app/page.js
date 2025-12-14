@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
-  const [etapa, setEtapa] = useState("cadastro"); // "cadastro" | "sorteio" | "consulta"
+  const [etapa, setEtapa] = useState("cadastro");
   const [participantes, setParticipantes] = useState([]);
   const [nome, setNome] = useState("");
   const [segredo, setSegredo] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // design system simples
+  // Carrega participantes do banco ao montar
+  useEffect(() => {
+    carregarParticipantes();
+  }, []);
+
   const baseInput =
     "w-full h-11 sm:h-12 rounded-2xl bg-[#0b1220] border border-[#34425d] px-4 text-xs sm:text-sm font-mono text-[#f9fff4] placeholder:text-[#8b95b5] focus:outline-none focus:ring-2 focus:ring-[#f7c566] focus:border-[#f7c566] transition";
 
@@ -20,78 +24,98 @@ export default function Home() {
   const secondaryButton =
     "h-10 px-6 rounded-full bg-[#050b17] text-[#e6f0ff] font-mono text-xs tracking-[0.18em] border border-[#34425d] hover:bg-[#10172a] disabled:opacity-40 flex items-center justify-center gap-2";
 
-  // ======== lógica ========
+  // ======== LÓGICA CORRIGIDA ========
 
-  const adicionarParticipante = () => {
+  const carregarParticipantes = async () => {
+    try {
+      const response = await fetch("/api/participantes/listar");
+      const data = await response.json();
+
+      if (data.sucesso) {
+        setParticipantes(data.participantes);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar participantes:", error);
+    }
+  };
+
+  // ✅ NOVO: Adicionar participante DIRETO no banco (etapa CADASTRO)
+  const adicionarParticipante = async () => {
     if (!nome.trim() || !segredo.trim()) {
       setMensagem("❌ Preencha nome e segredo!");
       return;
     }
 
-    const novo = { nome: nome.trim(), segredo: segredo.trim(), sorteado: "" };
-    setParticipantes((prev) => [...prev, novo]);
-    setNome("");
-    setSegredo("");
-    setMensagem(`✅ ${novo.nome} adicionado!`);
-    setTimeout(() => setMensagem(""), 3000);
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/participantes/adicionar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: nome.trim(),
+          segredo: segredo.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.sucesso) {
+        setMensagem(`✅ ${data.participante.nome} cadastrado!`);
+        setNome("");
+        setSegredo("");
+
+        // Recarrega a lista
+        await carregarParticipantes();
+
+        setTimeout(() => setMensagem(""), 3000);
+      } else {
+        setMensagem(data.erro || "❌ Erro ao cadastrar");
+      }
+    } catch (error) {
+      setMensagem("❌ Erro: " + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const validarPar = () => {
+  // ✅ NOVO: Fazer sorteio (sem adicionar, só faz a lógica circular)
+  const realizarSorteio = async () => {
     if (participantes.length < 4) {
       setMensagem("❌ Mínimo 4 participantes!");
-      return false;
+      return;
     }
     if (participantes.length % 2 !== 0) {
       setMensagem("❌ Número de participantes deve ser PAR!");
-      return false;
+      return;
     }
-    return true;
-  };
-
-  const embaralhar = (array) => {
-    const resultado = [...array];
-    for (let i = resultado.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [resultado[i], resultado[j]] = [resultado[j], resultado[i]];
-    }
-    return resultado;
-  };
-
-  const realizarSorteio = async () => {
-    if (!validarPar()) return;
 
     setLoading(true);
     setMensagem("🎲 Sorteando...");
-
-    const embaralhados = embaralhar(participantes);
-    const comSorteio = embaralhados.map((p, i) => ({
-      ...p,
-      sorteado: embaralhados[(i + 1) % embaralhados.length].nome,
-    }));
 
     try {
       const response = await fetch("/api/sorteio", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ participantes: comSorteio }),
+        body: JSON.stringify({
+          ids: participantes.map((p) => p.id), // Envia apenas os IDs
+        }),
       });
 
       const data = await response.json();
 
-      if (response.ok && data.sucesso) {
-        setMensagem(
-          "🎉 Sorteio realizado! Agora qualquer pessoa pode consultar.",
-        );
-        setParticipantes([]);
+      if (data.sucesso) {
+        setMensagem("🎉 Sorteio realizado! Qualquer pessoa pode consultar.");
+
         setTimeout(() => {
           setEtapa("consulta");
           setMensagem("");
         }, 2000);
       } else {
-        setMensagem(data.erro || "❌ Erro ao salvar sorteio.");
+        setMensagem(data.erro || "❌ Erro ao fazer sorteio");
       }
     } catch (error) {
-      setMensagem("❌ Erro ao salvar: " + error.message);
+      setMensagem("❌ Erro: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -122,20 +146,18 @@ export default function Home() {
       setNome("");
       setSegredo("");
     } catch (error) {
-      setMensagem("❌ Erro na consulta: " + error.message);
+      setMensagem("❌ Erro: " + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   const limparTudoLocal = () => {
-    setParticipantes([]);
     setNome("");
     setSegredo("");
     setMensagem("");
   };
 
-  // chama /api/reset para limpar a tabela e volta para cadastro
   const novoSorteio = async () => {
     setLoading(true);
     setMensagem("");
@@ -145,16 +167,17 @@ export default function Home() {
       const data = await resp.json();
 
       if (!resp.ok || !data.sucesso) {
-        setMensagem(data.erro || "❌ Erro ao limpar participantes");
+        setMensagem(data.erro || "❌ Erro ao limpar");
         return;
       }
 
       limparTudoLocal();
+      setParticipantes([]);
       setEtapa("cadastro");
       setMensagem("🧹 Tudo limpo! Comece um novo sorteio.");
       setTimeout(() => setMensagem(""), 2500);
     } catch (error) {
-      setMensagem("❌ Erro ao resetar: " + error.message);
+      setMensagem("❌ Erro: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -216,7 +239,8 @@ export default function Home() {
             </h1>
             <p className="mt-3 inline-flex items-center gap-2 text-base sm:text-lg font-mono text-[#fdf7e6] bg-[#050b17]/80 px-5 py-2 rounded-full border border-[#34425d]">
               <span>🎅</span>
-              {etapa === "cadastro" && "Cadastre todos os participantes"}
+              {etapa === "cadastro" &&
+                "Cadastre-se aqui! Todos na mesma página"}
               {etapa === "sorteio" && "Revise e confirme o sorteio"}
               {etapa === "consulta" &&
                 "Digite seu nome e segredo para ver quem você tirou"}
@@ -252,7 +276,7 @@ export default function Home() {
                 <div className="flex-1">
                   <label className="flex items-center gap-2 font-mono text-xs sm:text-sm text-[#f7fbe9] mb-2 uppercase tracking-[0.18em]">
                     <span className="text-base text-[#9be15d]">👤</span>
-                    Nome do participante
+                    Seu nome
                   </label>
                   <input
                     type="text"
@@ -270,7 +294,7 @@ export default function Home() {
                 <div className="flex-1">
                   <label className="flex items-center gap-2 font-mono text-xs sm:text-sm text-[#f7fbe9] mb-2 uppercase tracking-[0.18em]">
                     <span className="text-base text-[#f05b5b]">🔒</span>
-                    Segredo pessoal
+                    Seu segredo
                   </label>
                   <input
                     id="segredo-input"
@@ -286,53 +310,62 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4">
-                <button
-                  type="button"
-                  onClick={adicionarParticipante}
-                  className={primaryButton}
-                >
-                  + ADICIONAR PARTICIPANTE
-                </button>
-
-                <p className="w-full h-11 flex items-center justify-center rounded-full bg-[#050b17] text-[#e6f0ff] font-mono text-sm sm:text-base tracking-[0.18em] border border-[#34425d]">
-                  {participantes.length < 4
-                    ? `PRECISA DE ${4 - participantes.length} PARTICIPANTES`
-                    : `${participantes.length} PARTICIPANTES CADASTRADOS`}
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={adicionarParticipante}
+                disabled={loading}
+                className={primaryButton}
+              >
+                {loading ? "⏳ CADASTRANDO..." : "+ CADASTRAR-SE"}
+              </button>
 
               {participantes.length > 0 && (
                 <div className="flex flex-col gap-6">
-                  <div className="rounded-2xl border border-[#233044] bg-[#050812]/90 px-4 sm:px-5 py-4 max-h-52 overflow-y-auto space-y-2">
-                    {participantes.map((p, i) => (
-                      <div
-                        key={i}
-                        className="h-10 flex items-center gap-3 rounded-xl bg-[#0b1220] px-4 text-xs sm:text-sm font-mono text-[#f1e9ff] border border-transparent hover:border-[#f7c566] transition"
-                      >
-                        <span className="w-6 text-center text-[#9be15d]">
-                          {i + 1}
-                        </span>
-                        <span className="truncate">{p.nome}</span>
-                      </div>
-                    ))}
+                  <div className="rounded-2xl border border-[#233044] bg-[#050812]/90 px-4 sm:px-5 py-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-mono text-[#9be15d] uppercase tracking-widest">
+                        👥 Participantes cadastrados
+                      </h3>
+                      <span className="text-lg font-bold text-[#f7c566]">
+                        {participantes.length}
+                      </span>
+                    </div>
+
+                    <div className="max-h-52 overflow-y-auto space-y-2">
+                      {participantes.map((p, i) => (
+                        <div
+                          key={p.id}
+                          className="h-10 flex items-center gap-3 rounded-xl bg-[#0b1220] px-4 text-xs sm:text-sm font-mono text-[#f1e9ff] border border-transparent hover:border-[#f7c566] transition"
+                        >
+                          <span className="w-6 text-center text-[#9be15d]">
+                            {i + 1}
+                          </span>
+                          <span className="truncate">{p.nome}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="mt-2 flex flex-col sm:flex-row gap-4">
+                  <div className="rounded-2xl border border-[#34425d] bg-[#0a1015]/80 px-4 sm:px-5 py-3 text-center">
+                    <p className="font-mono text-xs sm:text-sm text-[#e6f0ff]">
+                      {participantes.length < 4
+                        ? `❌ Faltam ${4 - participantes.length} para um mínimo de 4 participantes`
+                        : participantes.length % 2 !== 0
+                          ? `❌ ${participantes.length} é ímpar! Mais 1 precisa se cadastrar`
+                          : `✅ ${participantes.length} participantes prontos para sorteio!`}
+                    </p>
+                  </div>
+
+                  <div className="mt-2 flex gap-4">
                     <button
                       onClick={() => setEtapa("sorteio")}
-                      disabled={participantes.length < 4}
+                      disabled={
+                        participantes.length < 4 ||
+                        participantes.length % 2 !== 0
+                      }
                       className={primaryButton}
                     >
                       PROSSEGUIR PARA SORTEIO 🎲
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={limparTudoLocal}
-                      className={secondaryButton}
-                    >
-                      LIMPAR LISTA
                     </button>
                   </div>
                 </div>
@@ -351,9 +384,9 @@ export default function Home() {
                   CONFIRMAR SORTEIO
                 </h2>
                 <p className="font-mono text-xs md:text-sm text-[#e6f0ff] leading-relaxed">
-                  {participantes.length} participantes na lista atual. Depois de
-                  confirmar, o sorteio é salvo no banco e qualquer pessoa pode
-                  consultar em qualquer dispositivo.
+                  {participantes.length} participantes cadastrados. Ao
+                  confirmar, o sorteio será realizado e todos poderão consultar
+                  em qualquer dispositivo.
                 </p>
               </div>
 
@@ -363,7 +396,7 @@ export default function Home() {
                   disabled={loading}
                   className={secondaryButton}
                 >
-                  ← VOLTAR AO CADASTRO
+                  ← VOLTAR
                 </button>
 
                 <button
@@ -414,7 +447,7 @@ export default function Home() {
                         e.key === "Enter" &&
                         document.getElementById("segredo-consulta")?.focus()
                       }
-                      placeholder="Seu nome completo"
+                      placeholder="Seu nome"
                       className={baseInput}
                     />
                   </div>
@@ -432,7 +465,7 @@ export default function Home() {
                       onKeyDown={(e) =>
                         e.key === "Enter" && consultarResultado()
                       }
-                      placeholder="Segredo cadastrado"
+                      placeholder="Seu segredo"
                       className={baseInput}
                     />
                   </div>
